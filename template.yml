@@ -1,0 +1,885 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CloudFormation template for infrastructure with S3, DynamoDB, Lambda, and API Gateway
+
+Parameters:
+  SourceBucketName:
+    Type: String
+    Description: "The S3 bucket name where the source code ZIP files are stored."
+
+Resources:
+  ### S3 Buckets ###
+  FrontendBucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-frontend"
+      WebsiteConfiguration:
+        IndexDocument: "index.html"
+        ErrorDocument: "index.html"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        IgnorePublicAcls: false
+        BlockPublicPolicy: false
+        RestrictPublicBuckets: false
+
+  FrontendBucketPolicy:
+    Type: "AWS::S3::BucketPolicy"
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: "PublicReadGetObject"
+            Effect: "Allow"
+            Principal: "*"
+            Action: "s3:GetObject"
+            Resource: !Sub "arn:aws:s3:::${AWS::StackName}-frontend/*"
+
+  MediaBucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-media"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        IgnorePublicAcls: false
+        BlockPublicPolicy: false
+        RestrictPublicBuckets: false
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins:
+              - "*"
+            AllowedMethods:
+              - GET
+              - PUT
+              - POST
+              - DELETE
+              - HEAD
+            AllowedHeaders:
+              - "*"
+            MaxAge: 3000
+            ExposedHeaders:
+              - "ETag"
+
+  MediaBucketPolicy:
+    Type: "AWS::S3::BucketPolicy"
+    Properties:
+      Bucket: !Ref MediaBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: "PublicReadGetObject"
+            Effect: "Allow"
+            Principal: "*"
+            Action: "s3:GetObject"
+            Resource: !Sub "arn:aws:s3:::${MediaBucket}/*"
+  
+  ### DynamoDB Table ###
+  UserTable:
+    Type: "AWS::DynamoDB::Table"
+    Properties:
+      TableName: !Sub "${AWS::StackName}-UserTable"
+      AttributeDefinitions:
+        - AttributeName: "id"
+          AttributeType: "S"
+      KeySchema:
+        - AttributeName: "id"
+          KeyType: "HASH"
+      BillingMode: "PROVISIONED"
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1000
+        WriteCapacityUnits: 1000
+  
+  ### Lambda Functions ###
+  LambdaExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-LambdaExecutionRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "lambda.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: !Sub "${AWS::StackName}-LambdaExecutionDynamodbPolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "dynamodb:*"
+                  - "dax:*"
+                  - "application-autoscaling:DeleteScalingPolicy"
+                  - "application-autoscaling:DeregisterScalableTarget"
+                  - "application-autoscaling:DescribeScalableTargets"
+                  - "application-autoscaling:DescribeScalingActivities"
+                  - "application-autoscaling:DescribeScalingPolicies"
+                  - "application-autoscaling:PutScalingPolicy"
+                  - "application-autoscaling:RegisterScalableTarget"
+                  - "cloudwatch:DeleteAlarms"
+                  - "cloudwatch:DescribeAlarmHistory"
+                  - "cloudwatch:DescribeAlarms"
+                  - "cloudwatch:DescribeAlarmsForMetric"
+                  - "cloudwatch:GetMetricStatistics"
+                  - "cloudwatch:ListMetrics"
+                  - "cloudwatch:PutMetricAlarm"
+                  - "cloudwatch:GetMetricData"
+                  - "datapipeline:ActivatePipeline"
+                  - "datapipeline:CreatePipeline"
+                  - "datapipeline:DeletePipeline"
+                  - "datapipeline:DescribeObjects"
+                  - "datapipeline:DescribePipelines"
+                  - "datapipeline:GetPipelineDefinition"
+                  - "datapipeline:ListPipelines"
+                  - "datapipeline:PutPipelineDefinition"
+                  - "datapipeline:QueryObjects"
+                  - "ec2:DescribeVpcs"
+                  - "ec2:DescribeSubnets"
+                  - "ec2:DescribeSecurityGroups"
+                  - "iam:GetRole"
+                  - "iam:ListRoles"
+                  - "kms:DescribeKey"
+                  - "kms:ListAliases"
+                  - "sns:CreateTopic"
+                  - "sns:DeleteTopic"
+                  - "sns:ListSubscriptions"
+                  - "sns:ListSubscriptionsByTopic"
+                  - "sns:ListTopics"
+                  - "sns:Subscribe"
+                  - "sns:Unsubscribe"
+                  - "sns:SetTopicAttributes"
+                  - "lambda:CreateFunction"
+                  - "lambda:ListFunctions"
+                  - "lambda:ListEventSourceMappings"
+                  - "lambda:CreateEventSourceMapping"
+                  - "lambda:DeleteEventSourceMapping"
+                  - "lambda:GetFunctionConfiguration"
+                  - "lambda:DeleteFunction"
+                  - "resource-groups:ListGroups"
+                  - "resource-groups:ListGroupResources"
+                  - "resource-groups:GetGroup"
+                  - "resource-groups:GetGroupQuery"
+                  - "resource-groups:DeleteGroup"
+                  - "resource-groups:CreateGroup"
+                  - "tag:GetResources"
+                  - "kinesis:ListStreams"
+                  - "kinesis:DescribeStream"
+                  - "kinesis:DescribeStreamSummary"
+                Resource: "*"
+        - PolicyName: !Sub "${AWS::StackName}-LambdaExecutionS3Policy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "s3:*"
+                  - "s3-object-lambda:*"
+                Resource:
+                  - !Sub 'arn:aws:s3:::${MediaBucket}/*'
+                  - !Sub 'arn:aws:s3:::${MediaBucket}'
+  
+  AuthorizerFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-AuthorizerFunction"
+      Handler: "index.handler"
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: "nodejs20.x"
+      Timeout: 300
+      MemorySize: 512
+      Code:
+        S3Bucket: !Ref SourceBucketName
+        S3Key: "authorizer.zip"
+      Environment:
+        Variables:
+          DYNAMO_TABLE_NAME: !Ref UserTable
+          JWT_SECRET: "SAi9VtZBF8v9W6ByrwDn9h1SQ28nOC0vmlrHqBGG4gP5dnlHRz"
+  
+  LambdaInvokeAuthorizerFunctionPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !GetAtt AuthorizerFunction.Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*"
+  
+  RegisterFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-RegisterFunction"
+      Handler: "index.handler"
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: "nodejs20.x"
+      Timeout: 300
+      MemorySize: 512
+      Code:
+        S3Bucket: !Ref SourceBucketName
+        S3Key: "register.zip"
+      Environment:
+        Variables:
+          DYNAMO_TABLE_NAME: !Ref UserTable
+          S3_BUCKET_NAME: !Ref MediaBucket
+  
+  LambdaInvokeRegisterFunctionPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !GetAtt RegisterFunction.Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*"
+  
+  LoginFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-LoginFunction"
+      Handler: "index.handler"
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: "nodejs20.x"
+      Timeout: 300
+      MemorySize: 512
+      Code:
+        S3Bucket: !Ref SourceBucketName
+        S3Key: "login.zip"
+      Environment:
+        Variables:
+          DYNAMO_TABLE_NAME: !Ref UserTable
+          JWT_SECRET: "SAi9VtZBF8v9W6ByrwDn9h1SQ28nOC0vmlrHqBGG4gP5dnlHRz"
+  
+  LambdaInvokeLoginFunctionPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !GetAtt LoginFunction.Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*"
+  
+  UpdateProfileFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-UpdateProfileFunction"
+      Handler: "index.handler"
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: "nodejs20.x"
+      Timeout: 300
+      MemorySize: 512
+      Code:
+        S3Bucket: !Ref SourceBucketName
+        S3Key: "updateProfile.zip"
+      Environment:
+        Variables:
+          DYNAMO_TABLE_NAME: !Ref UserTable
+  
+  LambdaInvokeUpdateProfileFunctionPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !GetAtt UpdateProfileFunction.Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*"
+  
+  UpdatePasswordFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-UpdatePasswordFunction"
+      Handler: "index.handler"
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: "nodejs20.x"
+      Timeout: 300
+      MemorySize: 512
+      Code:
+        S3Bucket: !Ref SourceBucketName
+        S3Key: "updatePassword.zip"
+      Environment:
+        Variables:
+          DYNAMO_TABLE_NAME: !Ref UserTable
+          JWT_SECRET: "SAi9VtZBF8v9W6ByrwDn9h1SQ28nOC0vmlrHqBGG4gP5dnlHRz"
+  
+  LambdaInvokeUpdatePasswordFunctionPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !GetAtt UpdatePasswordFunction.Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*"
+  
+  UpdateImageFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-UpdateImageFunction"
+      Handler: "index.handler"
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: "nodejs20.x"
+      Timeout: 300
+      MemorySize: 512
+      Code:
+        S3Bucket: !Ref SourceBucketName
+        S3Key: "updateImage.zip"
+      Environment:
+        Variables:
+          DYNAMO_TABLE_NAME: !Ref UserTable
+          S3_BUCKET_NAME: !Ref MediaBucket
+  
+  LambdaInvokeUpdateImageFunctionPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !GetAtt UpdateImageFunction.Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*"
+  
+  FetchUserFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-FetchUserFunction"
+      Handler: "index.handler"
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: "nodejs20.x"
+      Timeout: 300
+      MemorySize: 512
+      Code:
+        S3Bucket: !Ref SourceBucketName
+        S3Key: "fetchUser.zip"
+      Environment:
+        Variables:
+          DYNAMO_TABLE_NAME: !Ref UserTable
+  
+  LambdaInvokeFetchUserFunctionPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !GetAtt FetchUserFunction.Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*"
+  
+  ### API Gateway ###
+  ApiGateway:
+    Type: "AWS::ApiGateway::RestApi"
+    Properties:
+      Name: !Sub "${AWS::StackName}-ApiGatewayRestApi"
+      DisableExecuteApiEndpoint: false
+  
+  ApiGatewayStage:
+    Type: "AWS::ApiGateway::Stage"
+    Properties:
+      StageName: "prod"
+      RestApiId: !Ref ApiGateway
+      DeploymentId: !Ref ApiGatewayDeployment
+      MethodSettings:
+        - DataTraceEnabled: true
+          HttpMethod: "*"
+          LoggingLevel: "ERROR"
+          ResourcePath: "/*"
+          MetricsEnabled: true
+  
+  ApiGatewayDeployment:
+    Type: "AWS::ApiGateway::Deployment"
+    Properties:
+      RestApiId: !Ref ApiGateway
+    DependsOn:
+      - LoginResource
+      - LoginMethod
+      - LoginMethodOption
+      - RegisterResource
+      - RegisterMethod
+      - RegisterMethodOption
+      - FetchUserResource
+      - FetchUserMethod
+      - FetchUserMethodOption
+      - UpdateProfileResource
+      - UpdateProfileMethod
+      - UpdateProfileMethodOption
+      - UpdatePasswordResource
+      - UpdatePasswordMethod
+      - UpdatePasswordMethodOption
+      - UpdateImageResource
+      - UpdateImageMethod
+      - UpdateImageMethodOption
+  
+  ApiGatewayRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-ApiGatewayRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "apigateway.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: !Sub "${AWS::StackName}-ApiGatewayLoggingPolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: "arn:aws:logs:*:*:*"
+
+  ### API Gateway Authorizer ###
+  ApiGatewayAuthorizer:
+    Type: "AWS::ApiGateway::Authorizer"
+    Properties:
+      Name: !Sub "${AWS::StackName}-ApiGatewayAuthorizer"
+      Type: "TOKEN"
+      RestApiId: !Ref ApiGateway
+      IdentitySource: "method.request.header.Authorization"
+      AuthorizerUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AuthorizerFunction.Arn}/invocations"
+      AuthorizerResultTtlInSeconds: 0
+
+  ### API Gateway Resources and Methods ###
+  LoginResource:
+    Type: "AWS::ApiGateway::Resource"
+    Properties:
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      RestApiId: !Ref ApiGateway
+      PathPart: "login"
+
+  LoginMethod:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref LoginResource
+      HttpMethod: "POST"
+      AuthorizationType: "NONE"
+      Integration:
+        Type: "AWS_PROXY"
+        IntegrationHttpMethod: "POST"
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LoginFunction.Arn}/invocations"
+
+  LoginMethodOption:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref LoginResource
+      HttpMethod: "OPTIONS"
+      AuthorizationType: "NONE"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+            method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'"
+            method.response.header.Access-Control-Allow-Origin: "'*'"
+      Integration:
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        IntegrationHttpMethod: "OPTIONS"
+        Type: "MOCK"
+
+  RegisterResource:
+    Type: "AWS::ApiGateway::Resource"
+    Properties:
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      RestApiId: !Ref ApiGateway
+      PathPart: "register"
+
+  RegisterMethod:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref RegisterResource
+      HttpMethod: "POST"
+      AuthorizationType: "NONE"
+      Integration:
+        Type: "AWS_PROXY"
+        IntegrationHttpMethod: "POST"
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${RegisterFunction.Arn}/invocations"
+
+  RegisterMethodOption:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref RegisterResource
+      HttpMethod: "OPTIONS"
+      AuthorizationType: "NONE"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+            method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'"
+            method.response.header.Access-Control-Allow-Origin: "'*'"
+      Integration:
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        IntegrationHttpMethod: "OPTIONS"
+        Type: "MOCK"
+
+  FetchUserResource:
+    Type: "AWS::ApiGateway::Resource"
+    Properties:
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      RestApiId: !Ref ApiGateway
+      PathPart: "fetch-user"
+
+  FetchUserMethod:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref FetchUserResource
+      HttpMethod: "GET"
+      AuthorizationType: "CUSTOM"
+      AuthorizerId: !Ref ApiGatewayAuthorizer
+      Integration:
+        Type: "AWS_PROXY"
+        IntegrationHttpMethod: "POST"
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FetchUserFunction.Arn}/invocations"
+
+  FetchUserMethodOption:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref FetchUserResource
+      HttpMethod: "OPTIONS"
+      AuthorizationType: "NONE"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+            method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'"
+            method.response.header.Access-Control-Allow-Origin: "'*'"
+      Integration:
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        IntegrationHttpMethod: "OPTIONS"
+        Type: "MOCK"
+
+  UpdateProfileResource:
+    Type: "AWS::ApiGateway::Resource"
+    Properties:
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      RestApiId: !Ref ApiGateway
+      PathPart: "update-profile"
+
+  UpdateProfileMethod:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref UpdateProfileResource
+      HttpMethod: "POST"
+      AuthorizationType: "CUSTOM"
+      AuthorizerId: !Ref ApiGatewayAuthorizer
+      Integration:
+        Type: "AWS_PROXY"
+        IntegrationHttpMethod: "POST"
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${UpdateProfileFunction.Arn}/invocations"
+
+  UpdateProfileMethodOption:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref UpdateProfileResource
+      HttpMethod: "OPTIONS"
+      AuthorizationType: "NONE"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+            method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'"
+            method.response.header.Access-Control-Allow-Origin: "'*'"
+      Integration:
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        IntegrationHttpMethod: "OPTIONS"
+        Type: "MOCK"
+
+  UpdatePasswordResource:
+    Type: "AWS::ApiGateway::Resource"
+    Properties:
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      RestApiId: !Ref ApiGateway
+      PathPart: "update-password"
+
+  UpdatePasswordMethod:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref UpdatePasswordResource
+      HttpMethod: "POST"
+      AuthorizationType: "CUSTOM"
+      AuthorizerId: !Ref ApiGatewayAuthorizer
+      Integration:
+        Type: "AWS_PROXY"
+        IntegrationHttpMethod: "POST"
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${UpdatePasswordFunction.Arn}/invocations"
+
+  UpdatePasswordMethodOption:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref UpdatePasswordResource
+      HttpMethod: "OPTIONS"
+      AuthorizationType: "NONE"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+            method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'"
+            method.response.header.Access-Control-Allow-Origin: "'*'"
+      Integration:
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        IntegrationHttpMethod: "OPTIONS"
+        Type: "MOCK"
+
+  UpdateImageResource:
+    Type: "AWS::ApiGateway::Resource"
+    Properties:
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      RestApiId: !Ref ApiGateway
+      PathPart: "update-image"
+
+  UpdateImageMethod:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref UpdateImageResource
+      HttpMethod: "POST"
+      AuthorizationType: "CUSTOM"
+      AuthorizerId: !Ref ApiGatewayAuthorizer
+      Integration:
+        Type: "AWS_PROXY"
+        IntegrationHttpMethod: "POST"
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${UpdateImageFunction.Arn}/invocations"
+
+  UpdateImageMethodOption:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref UpdateImageResource
+      HttpMethod: "OPTIONS"
+      AuthorizationType: "NONE"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+            method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'"
+            method.response.header.Access-Control-Allow-Origin: "'*'"
+      Integration:
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        IntegrationHttpMethod: "OPTIONS"
+        Type: "MOCK"
+  
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub '${AWS::StackName}-CodeBuildProject'
+      Source:
+        Type: S3
+        Location: !Sub '${SourceBucketName}/frontend.zip'
+      Artifacts:
+        Type: S3
+        Location: !Ref FrontendBucket
+        Packaging: ZIP
+        Name: !Sub '${AWS::StackName}-build-output.zip'
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:5.0
+        Type: LINUX_CONTAINER
+        EnvironmentVariables:
+          - Name: VITE_APP_API_URL
+            Type: PLAINTEXT
+            Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod"
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      TimeoutInMinutes: 10
+
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-CodeBuildProjectRole'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: !Sub '${AWS::StackName}-CodeBuildPolicy'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:*
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - codebuild:StartBuild
+                  - codebuild:BatchGetBuilds
+                Resource:
+                  - !Sub 'arn:aws:s3:::${SourceBucketName}/*'
+                  - !Sub 'arn:aws:s3:::${FrontendBucket}/*'
+                  - !Sub 'arn:aws:s3:::${SourceBucketName}'
+                  - !Sub 'arn:aws:s3:::${FrontendBucket}'
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${AWS::StackName}-CodeBuildProject*'
+  
+  # CodePipeline
+  CodePipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      RoleArn: !GetAtt CodePipelineRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref FrontendBucket
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: SourceAction
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: S3
+                Version: '1'
+              OutputArtifacts:
+                - Name: SourceOutput
+              Configuration:
+                S3Bucket: !Ref SourceBucketName
+                S3ObjectKey: frontend.zip
+        - Name: Build
+          Actions:
+            - Name: BuildAction
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              InputArtifacts:
+                - Name: SourceOutput
+              OutputArtifacts:
+                - Name: BuildOutput
+              Configuration:
+                ProjectName: !Ref CodeBuildProject
+        - Name: Deploy
+          Actions:
+            - Name: DeployAction
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: S3
+                Version: '1'
+              InputArtifacts:
+                - Name: BuildOutput
+              Configuration:
+                BucketName: !Ref FrontendBucket
+                Extract: 'true'
+  
+  # IAM Role for the pipeline
+  CodePipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-PipelineRole'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: !Sub "${AWS::StackName}-CodePipelinePolicy"
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - codebuild:StartBuild
+                  - codebuild:BatchGetBuilds
+                  - codepipeline:GetPipeline
+                  - codepipeline:GetPipelineExecution
+                  - codepipeline:PutJobSuccessResult
+                  - codepipeline:PutJobFailureResult
+                  - s3:*
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !GetAtt CodeBuildProject.Arn
+                  - !Sub 'arn:aws:s3:::${SourceBucketName}/*'
+                  - !Sub 'arn:aws:s3:::${FrontendBucket}/*'
+                  - !Sub 'arn:aws:s3:::${SourceBucketName}'
+                  - !Sub 'arn:aws:s3:::${FrontendBucket}'
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${AWS::StackName}-CodePipeline*'
+
+  # CloudFront Distribution
+  CloudFrontDistribution:
+    Type: "AWS::CloudFront::Distribution"
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Origins:
+          - Id: !Sub "${AWS::StackName}-frontend-origin"
+            DomainName: !GetAtt FrontendBucket.DomainName
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: http-only
+        DefaultCacheBehavior:
+          TargetOriginId: !Sub "${AWS::StackName}-frontend-origin"
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+          CachedMethods:
+            - GET
+            - HEAD
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+        DefaultRootObject: "index.html"
+        PriceClass: PriceClass_100
+        Comment: !Sub "${AWS::StackName} CloudFront Distribution"
+
+Outputs:
+  ApiGatewayInvokeURL:
+    Description: "API Gateway invoke URL"
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod"
+  
+  FrontendBucketURL:
+    Description: "URL of the frontend S3 bucket"
+    Value: !Sub "http://${FrontendBucket}.s3-website.${AWS::Region}.amazonaws.com"
+
+  CloudFrontURL:
+    Description: "URL of the CloudFront distribution"
+    Value: !Sub "https://${CloudFrontDistribution.DomainName}"
