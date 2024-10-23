@@ -45,7 +45,15 @@ user traffic and media uploads with zero server management.
 Now, watch your React- and Tailwind-powered frontend paired with AWS Lambda and API Gateway take flight—delivering
 scalable, fast, and secure user interactions.
 
+### What's next ?
+
+Check the [main](https://github.com/longbowou/open-frontend) repository this one is part of.
+
 ## Screenshots
 
 ![Screenshot 2024-10-22 at 9.41.38 PM.png](screenshots/cloudformation/Screenshot%202024-10-22%20at%209.41.38%E2%80%AFPM.png)
 ![Screenshot 2024-10-22 at 9.41.45 PM.png](screenshots/cloudformation/Screenshot%202024-10-22%20at%209.41.45%E2%80%AFPM.png)
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
