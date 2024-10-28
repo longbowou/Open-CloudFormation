@@ -83,10 +83,7 @@ Resources:
       KeySchema:
         - AttributeName: "id"
           KeyType: "HASH"
-      BillingMode: "PROVISIONED"
-      ProvisionedThroughput:
-        ReadCapacityUnits: 1000
-        WriteCapacityUnits: 1000
+      BillingMode: "PAY_PER_REQUEST"
   
   ### Lambda Functions ###
   LambdaExecutionRole:
